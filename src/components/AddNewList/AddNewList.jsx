@@ -93,6 +93,12 @@ const EditingForm = ({ text, setText, handleItemEdit, handleItemDelete, cancelEd
   )
 }
 
+const createDocumentId = () => {
+  const [day, month, yearTime] = new Date(Date.now()).toLocaleString().split('/')
+  const [year, time] = yearTime.split(',')
+  return `${year}_${month}_${day}__${time.trim()}`
+}
+
 export const AddNewList = ({ setListStarted, listStarted }) => {
   const { shoppingListsCollection } = useContext(FirebaseContext)
   const [documentId, setDocumentId] = useState('')
@@ -110,9 +116,8 @@ export const AddNewList = ({ setListStarted, listStarted }) => {
       }
 
        // eslint-disable-next-line
-      const today = `${new Date(Date.now()).toLocaleString().replace(/[\/\s:,]/g, '_')}`
       setCurentDocument({})
-      return setDocumentId(`List-${today}`)
+      return setDocumentId(createDocumentId())
     })
   }
 

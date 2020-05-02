@@ -2,7 +2,7 @@ import React from 'react'
 import { styled } from '@moonpig/launchpad-utils'
 import { system as s } from '@moonpig/launchpad-system'
 
-const StyledListItemInner = styled.li`
+const StyledListItemInner = styled.div`
 ${({ theme, isActive }) => s({
   mb: 4,
   position: 'relative',
