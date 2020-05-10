@@ -163,7 +163,7 @@ const StyledNav = styled.nav`
 `
 
 
-export const Navigation = ({ listStarted }) => {
+export const Navigation = () => {
   const [isOpen, setIsOpen] = useState(false)
   const history = useHistory()
 
@@ -182,14 +182,14 @@ export const Navigation = ({ listStarted }) => {
           <StyledNavLink exact to="/">Home</StyledNavLink>
         </li>
         <li>
-          <StyledNavLink to={listStarted ? '/edit' : '/add'}>{listStarted ? 'Edit Current' : 'Add New'} List</StyledNavLink>
+          <StyledNavLink to="/create">Create new list</StyledNavLink>
         </li>
-        {listStarted ? (
+        <li>
+          <StyledNavLink to="/edit">Edit current lists</StyledNavLink>
+        </li>
           <li>
-          <StyledNavLink to="/shop">Shop Current List</StyledNavLink>
+          <StyledNavLink to="/shop">Shop current lists</StyledNavLink>
         </li>
-        ): null
-        }
         <li>
           <StyledNavLink to="completed-lists">Completed Lists</StyledNavLink>
         </li>

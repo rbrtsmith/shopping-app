@@ -1,4 +1,5 @@
 export { Home } from './Home'
-export { AddEdit } from './AddEdit'
+export { Edit } from './Edit'
 export { Shop } from './Shop'
 export { Previous } from './Previous'
+export { Create } from './Create'

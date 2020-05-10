@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useContext, useRef } from 'react'
-import { useHistory } from 'react-router-dom';
+import React, { useState, useEffect, useContext } from 'react'
+import { Link, useParams, useHistory } from "react-router-dom";
 import { styled } from '@moonpig/launchpad-utils'
 import { system as s } from '@moonpig/launchpad-system'
 import { IconBasket, IconCross, IconReset, IconAdd } from '@moonpig/launchpad-assets'
-import { IconButton, FilledButton } from '@moonpig/launchpad-components'
+import { IconButton, FilledButton, Box, Heading } from '@moonpig/launchpad-components'
 import { TextInput } from '@moonpig/launchpad-forms'
 
 import { StyledListItem, StyledListItemSelectButton } from '../components'
 import { FirebaseContext } from '../components'
 import { IconPencil } from '../assets'
+import { formatDateFromTimestamp } from '../utils'
+
 
 const StyledList = styled.ul`
   ${s({ mb: 6 })}
@@ -112,61 +114,100 @@ const StyledNotes = styled.ul`
   }
 `
 
+const StyledListLink = styled(Link)`
+  display: flex;
+  align-items: center;
+  padding-left: 16px;
+  padding-right: 16px;
+  height: 48px;
+  color: inherit;
+  &:hover,
+  &:focus {
+    text-decoration: none;
+  }
+`
+
 const NotesForm = ({ text, setText, handleNoteAdd, cancelEdit }) => {
-  // const inputEl = useRef(null)
   const [hasChanged, setHasChanged] = useState(false)
-  // useEffect(() => {
-  //   inputEl.current.focus()
-  // }, [])
   return (
     <StyledNotesForm>
-          <TextInput
-            // ref={inputEl}
-            type="text"
-            name="item"
-            label="Add Note…"
-            value={text}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter' && text) handleNoteAdd()
-            }}
-            onChange={e => {
-              setText(e.target.value)
-              setHasChanged(true)
-            }}
-          />
-          {text && hasChanged && <StyledNotesButton icon={IconAdd} type="button" onClick={handleNoteAdd}>Submit</StyledNotesButton>}
+      <TextInput
+        type="text"
+        name="item"
+        label="Add Note…"
+        value={text}
+        onKeyPress={(e) => {
+          if (e.key === 'Enter' && text) handleNoteAdd()
+        }}
+        onChange={e => {
+          setText(e.target.value)
+          setHasChanged(true)
+        }}
+      />
+      {text && hasChanged && <StyledNotesButton icon={IconAdd} type="button" onClick={handleNoteAdd}>Submit</StyledNotesButton>}
     </StyledNotesForm>
   )
 }
 
-export const Shop = ({ setListStarted }) => {
+export const Shop = () => {
   const history = useHistory()
-  const [currentDocument, setCurentDocument] = useState({})
-  const [documentId, setDocumentId] = useState('')
+  const { id: documentId } = useParams()
+
+  const [isLoading, setIsLoading] = useState(true)
+  const [lists, setLists] = useState([])
+  const [currentDocument, setCurentDocument] = useState(null)
   const [activeItemIndex, setActiveItemIndex] = useState(-1)
   const [activeItemNoteIndex, setActiveItemNoteIndex] = useState(-1)
   const [noteText, setNoteText] = useState('')
+
   const { shoppingListsCollection } = useContext(FirebaseContext)
-  const getInProgressCollection = async () => {
-    await shoppingListsCollection.onSnapshot(querySnapshot => {
-      const doc = querySnapshot.docs[querySnapshot.size - 1]?.data()
-      if (doc && !doc.completed) {
-        setCurentDocument(doc)
-        return setDocumentId(querySnapshot.docs[querySnapshot.size - 1].id)
-      }
+
+  const getCurrentDocument = async () => {
+    await shoppingListsCollection.doc(documentId).onSnapshot(doc => {
+      setCurentDocument(doc.data())
     })
   }
 
   useEffect(() => {
-    getInProgressCollection()
-    // eslint-disable-next-line
-  }, [shoppingListsCollection])
+    const getLists = async () => {
+      setIsLoading(true)
+      const doc = await shoppingListsCollection.where('completed', '==', false).get()
+      if (doc?.docs?.length) {
+        setLists(doc.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        })))
+      }
+      setIsLoading(false)
+    }
+
+    const getMatchingList = async () => {
+      setIsLoading(true)
+      await shoppingListsCollection.doc(documentId).onSnapshot(doc => {
+        const data = doc.data()
+        setIsLoading(false)
+        if (data.completed) {
+          return
+        }
+        setCurentDocument(doc.data())
+      })
+    }
+
+    if (documentId) {
+      setLists([])
+      getMatchingList()
+    } else {
+      setCurentDocument(null)
+      getLists()
+    }
+
+  }, [shoppingListsCollection, documentId])
 
   const handleItemComplete = (index, isComplete) => {
     const items = currentDocument.items || []
 
     shoppingListsCollection.doc(documentId).set({
-      completed: false,
+      ...currentDocument,
       items: [
         ...items.slice(0, index),
         {
@@ -178,7 +219,7 @@ export const Shop = ({ setListStarted }) => {
     }).then(() => {
       setActiveItemIndex(-1)
       setActiveItemNoteIndex(-1)
-      getInProgressCollection()
+      getCurrentDocument()
       setNoteText('')
     }).catch(error => console.error(`Error ${isComplete ? 'completing' : 'undoing'}  item: `, error))
   }
@@ -187,7 +228,7 @@ export const Shop = ({ setListStarted }) => {
     const items = currentDocument.items || []
 
     shoppingListsCollection.doc(documentId).set({
-      completed: false,
+      ...currentDocument,
       items: [
         ...items.slice(0, index),
         {
@@ -199,83 +240,255 @@ export const Shop = ({ setListStarted }) => {
     }).then(() => {
       setActiveItemIndex(-1)
       setActiveItemNoteIndex(-1)
-      getInProgressCollection()
+      getCurrentDocument()
       setNoteText('')
     }).catch(error => console.error('Error adding note item: ', error))
   }
 
   const completeShoppingList = () => {
-    const items = currentDocument.items || []
     shoppingListsCollection.doc(documentId).set({
+      ...currentDocument,
       completed: true,
-      items
     }).then(() => {
       setActiveItemIndex(-1)
       setActiveItemNoteIndex(-1)
-      setListStarted(false)
       history.push('/')
     }).catch(error => console.error('Error completing list', error))
   }
-
-  const allCompleted = currentDocument.items?.every(item => item.completed)
-
-  return (<div>
-    <h2>Shop</h2>
-    <StyledList>
-      {currentDocument.items?.map((item, index) => (
-        <StyledListItem isActive={activeItemIndex === index} key={item.title}>
-          {activeItemIndex === index ? (
-            <StyledItemContent>
-              <StyledItemText>
-                {item.completed ? <span style={{ color: 'green'}}>✔</span> : ''} {item.title}
-              </StyledItemText>
-              <StyledIconButton icon={IconCross} onClick={() => {
-                setActiveItemIndex(-1)
-                setActiveItemNoteIndex(-1)
-                setNoteText('')
-              }}>Cancel</StyledIconButton>
-              {item.completed ? (
-                <StyledIconButton icon={IconReset} onClick={() => handleItemComplete(index, false)}>Undo</StyledIconButton>
-              ) : (
-                <StyledIconButton icon={IconBasket} onClick={() => handleItemComplete(index, true)}>Complete</StyledIconButton>
-              )}
-              <StyledIconPencilButton icon={IconPencil} onClick={() => setActiveItemNoteIndex(index)}>Add Note</StyledIconPencilButton>
-              {item.notes.length ? (
-                <>
-                  <StyledNotes>
-                    {item.notes.map(note => (
-                      <li key={note}>
-                        {note}
-                      </li>
-                    ))}
-                  </StyledNotes>
-                </>
-              ) : null}
-              {activeItemNoteIndex === index ? (
-                <NotesForm text={noteText} setText={setNoteText} handleNoteAdd={() => handleNoteAdd(index)} cancelEdit={() => setActiveItemNoteIndex(-1)} />
-              ) : null}
-            </StyledItemContent>
-          ) : (
-            <>
-            <StyledListItemSelectButton onClick={() => setActiveItemIndex(index)}>
-              {item.completed ? <span style={{ color: 'green'}}>✔</span> : ''} {item.title}
-            </StyledListItemSelectButton>
-            {item.notes.length ? (
-              <>
-                <StyledNotes>
-                  {item.notes.map(note => (
-                    <li key={note}>
-                      {note}
-                    </li>
+  
+  const allCompleted = currentDocument?.items?.every(item => item.completed)
+  console.log(currentDocument)
+  return (
+    <div>
+      {isLoading ? 'Loading…' : (
+        lists?.length ? (
+          <>
+            <h2>Shopping Lists (Shop)</h2>
+            <ul>
+              {lists?.map(item => (
+                <StyledListItem key={item.id}>
+                  <StyledListLink to={`/shop/${item.id}`}>
+                    {item.title}: {formatDateFromTimestamp(item.createdAt)}
+                  </StyledListLink>
+                </StyledListItem>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <Box>
+            {currentDocument ? (
+              <div>
+                <Box mb={6}>
+                  <Heading mb={0} level="h2">{currentDocument.title} Shopping list</Heading>
+                  Created on {formatDateFromTimestamp(currentDocument.createdAt)}
+                </Box>
+                <StyledList>
+                  {currentDocument.items?.map((item, index) => (
+                    <StyledListItem isActive={activeItemIndex === index} key={item.title}>
+                      {activeItemIndex === index ? (
+                        <StyledItemContent>
+                          <StyledItemText>
+                            {item.completed ? <span style={{ color: 'green'}}>✔</span> : ''} {item.title}
+                          </StyledItemText>
+                          <StyledIconButton icon={IconCross} onClick={() => {
+                            setActiveItemIndex(-1)
+                            setActiveItemNoteIndex(-1)
+                            setNoteText('')
+                          }}>Cancel</StyledIconButton>
+                          {item.completed ? (
+                            <StyledIconButton icon={IconReset} onClick={() => handleItemComplete(index, false)}>Undo</StyledIconButton>
+                          ) : (
+                            <StyledIconButton icon={IconBasket} onClick={() => handleItemComplete(index, true)}>Complete</StyledIconButton>
+                          )}
+                          <StyledIconPencilButton icon={IconPencil} onClick={() => setActiveItemNoteIndex(index)}>Add Note</StyledIconPencilButton>
+                          {item.notes.length ? (
+                            <>
+                              <StyledNotes>
+                                {item.notes.map(note => (
+                                  <li key={note}>
+                                    {note}
+                                  </li>
+                                ))}
+                              </StyledNotes>
+                            </>
+                          ) : null}
+                          {activeItemNoteIndex === index ? (
+                            <NotesForm text={noteText} setText={setNoteText} handleNoteAdd={() => handleNoteAdd(index)} cancelEdit={() => setActiveItemNoteIndex(-1)} />
+                          ) : null}
+                        </StyledItemContent>
+                      ) : (
+                        <>
+                        <StyledListItemSelectButton onClick={() => setActiveItemIndex(index)}>
+                          {item.completed ? <span style={{ color: 'green'}}>✔</span> : ''} {item.title}
+                        </StyledListItemSelectButton>
+                        {item.notes.length ? (
+                          <>
+                            <StyledNotes>
+                              {item.notes.map(note => (
+                                <li key={note}>
+                                  {note}
+                                </li>
+                              ))}
+                            </StyledNotes>
+                          </>
+                        ) : null}
+                        </>
+                      )}
+                    </StyledListItem>
                   ))}
-                </StyledNotes>
-              </>
-            ) : null}
-            </>
-          )}
-        </StyledListItem>
-      ))}
-    </StyledList>
-    {allCompleted ? <FilledButton onClick={completeShoppingList}>Complete Shopping List</FilledButton> : null}
-  </div>)
+                </StyledList>
+                {allCompleted ? <FilledButton onClick={completeShoppingList}>Complete Shopping List</FilledButton> : null}
+              </div>
+            ) : (
+              <div>
+                {documentId ? 'List not found' : 'No Lists found'}
+              </div>
+            )}
+          </Box>
+        )
+      )}
+    </div>
+  )
 }
+
+// export const Foo = ({ setListStarted }) => {
+//   const history = useHistory()
+//   const [currentDocument, setCurentDocument] = useState({})
+//   const [documentId, setDocumentId] = useState('')
+//   const [activeItemIndex, setActiveItemIndex] = useState(-1)
+//   const [activeItemNoteIndex, setActiveItemNoteIndex] = useState(-1)
+//   const [noteText, setNoteText] = useState('')
+//   const { shoppingListsCollection } = useContext(FirebaseContext)
+//   const getInProgressCollection = async () => {
+//     await shoppingListsCollection.onSnapshot(querySnapshot => {
+//       const doc = querySnapshot.docs[querySnapshot.size - 1]?.data()
+//       if (doc && !doc.completed) {
+//         setCurentDocument(doc)
+//         return setDocumentId(querySnapshot.docs[querySnapshot.size - 1].id)
+//       }
+//     })
+//   }
+
+//   useEffect(() => {
+//     getInProgressCollection()
+//     // eslint-disable-next-line
+//   }, [shoppingListsCollection])
+
+//   const handleItemComplete = (index, isComplete) => {
+//     const items = currentDocument.items || []
+
+//     shoppingListsCollection.doc(documentId).set({
+//       completed: false,
+//       items: [
+//         ...items.slice(0, index),
+//         {
+//           ...items[index],
+//           completed: isComplete,
+//           },
+//         ...items.slice(index + 1)
+//       ]
+//     }).then(() => {
+//       setActiveItemIndex(-1)
+//       setActiveItemNoteIndex(-1)
+//       getInProgressCollection()
+//       setNoteText('')
+//     }).catch(error => console.error(`Error ${isComplete ? 'completing' : 'undoing'}  item: `, error))
+//   }
+
+//   const handleNoteAdd = (index) => {
+//     const items = currentDocument.items || []
+
+//     shoppingListsCollection.doc(documentId).set({
+//       completed: false,
+//       items: [
+//         ...items.slice(0, index),
+//         {
+//           ...items[index],
+//           notes: [...items[index].notes, noteText],
+//           },
+//         ...items.slice(index + 1)
+//       ]
+//     }).then(() => {
+//       setActiveItemIndex(-1)
+//       setActiveItemNoteIndex(-1)
+//       getInProgressCollection()
+//       setNoteText('')
+//     }).catch(error => console.error('Error adding note item: ', error))
+//   }
+
+//   const completeShoppingList = () => {
+//     const items = currentDocument.items || []
+//     shoppingListsCollection.doc(documentId).set({
+//       completed: true,
+//       items
+//     }).then(() => {
+//       setActiveItemIndex(-1)
+//       setActiveItemNoteIndex(-1)
+//       setListStarted(false)
+//       history.push('/')
+//     }).catch(error => console.error('Error completing list', error))
+//   }
+
+//   const allCompleted = currentDocument.items?.every(item => item.completed)
+
+//   return (<div>
+//     <h2>Shop</h2>
+//     <StyledList>
+//       {currentDocument.items?.map((item, index) => (
+//         <StyledListItem isActive={activeItemIndex === index} key={item.title}>
+//           {activeItemIndex === index ? (
+//             <StyledItemContent>
+//               <StyledItemText>
+//                 {item.completed ? <span style={{ color: 'green'}}>✔</span> : ''} {item.title}
+//               </StyledItemText>
+//               <StyledIconButton icon={IconCross} onClick={() => {
+//                 setActiveItemIndex(-1)
+//                 setActiveItemNoteIndex(-1)
+//                 setNoteText('')
+//               }}>Cancel</StyledIconButton>
+//               {item.completed ? (
+//                 <StyledIconButton icon={IconReset} onClick={() => handleItemComplete(index, false)}>Undo</StyledIconButton>
+//               ) : (
+//                 <StyledIconButton icon={IconBasket} onClick={() => handleItemComplete(index, true)}>Complete</StyledIconButton>
+//               )}
+//               <StyledIconPencilButton icon={IconPencil} onClick={() => setActiveItemNoteIndex(index)}>Add Note</StyledIconPencilButton>
+//               {item.notes.length ? (
+//                 <>
+//                   <StyledNotes>
+//                     {item.notes.map(note => (
+//                       <li key={note}>
+//                         {note}
+//                       </li>
+//                     ))}
+//                   </StyledNotes>
+//                 </>
+//               ) : null}
+//               {activeItemNoteIndex === index ? (
+//                 <NotesForm text={noteText} setText={setNoteText} handleNoteAdd={() => handleNoteAdd(index)} cancelEdit={() => setActiveItemNoteIndex(-1)} />
+//               ) : null}
+//             </StyledItemContent>
+//           ) : (
+//             <>
+//             <StyledListItemSelectButton onClick={() => setActiveItemIndex(index)}>
+//               {item.completed ? <span style={{ color: 'green'}}>✔</span> : ''} {item.title}
+//             </StyledListItemSelectButton>
+//             {item.notes.length ? (
+//               <>
+//                 <StyledNotes>
+//                   {item.notes.map(note => (
+//                     <li key={note}>
+//                       {note}
+//                     </li>
+//                   ))}
+//                 </StyledNotes>
+//               </>
+//             ) : null}
+//             </>
+//           )}
+//         </StyledListItem>
+//       ))}
+//     </StyledList>
+//     {allCompleted ? <FilledButton onClick={completeShoppingList}>Complete Shopping List</FilledButton> : null}
+//   </div>)
+// }
+
